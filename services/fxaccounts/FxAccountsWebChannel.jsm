@@ -18,6 +18,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 const {
   COMMAND_PROFILE_CHANGE,
   COMMAND_LOGIN,
+  COMMAND_OAUTH_LOGIN,
   COMMAND_LOGOUT,
   COMMAND_DELETE,
   COMMAND_CAN_LINK_ACCOUNT,
@@ -244,6 +245,32 @@ FxAccountsWebChannel.prototype = {
           .login(data)
           .catch(error => this._sendError(error, message, sendingContext));
         break;
+      case COMMAND_OAUTH_LOGIN:
+        const rustFxAccount = fxAccounts._internal.rustFxa;
+        rustFxAccount
+          .completeOAuthFlow(data.code, data.state)
+          .then(async () => {
+            const profile = await rustFxAccount.getProfile();
+            let state = await rustFxAccount.stateJSON();
+            state = JSON.parse(state);
+            const data = {
+              email: profile.email,
+              services: {},
+              sessionToken: state.session_token,
+              uid: profile.uid,
+              verified: true,
+            }
+
+            return this._helpers.login(data)
+          })
+          .then(() => {
+            // redirect to the sms page to connect more devices
+            browser.loadURI(`${accountServer.spec}sms`, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+            })
+          })
+          .catch(error => this._sendError(error, message, sendingContext));
+  break;
       case COMMAND_LOGOUT:
       case COMMAND_DELETE:
         this._helpers

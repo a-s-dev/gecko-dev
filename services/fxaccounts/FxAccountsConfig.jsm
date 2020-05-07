@@ -7,7 +7,7 @@ var EXPORTED_SYMBOLS = ["FxAccountsConfig"];
 const { RESTRequest } = ChromeUtils.import(
   "resource://services-common/rest.js"
 );
-const { log } = ChromeUtils.import(
+const { SCOPE_PROFILE, SCOPE_OLD_SYNC, SCOPE_SESSION_TOKEN, log } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -72,6 +72,10 @@ var FxAccountsConfig = {
         ...extraParams,
       },
     });
+  },
+
+  async promiseConnectAccountOAuthURI() {
+    return fxAccounts._internal.rustFxa.beginOAuthFlow([SCOPE_PROFILE, SCOPE_OLD_SYNC, SCOPE_SESSION_TOKEN]);
   },
 
   async promiseForceSigninURI(entrypoint, extraParams = {}) {

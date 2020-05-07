@@ -40,6 +40,7 @@ const {
   FXA_PWDMGR_REAUTH_WHITELIST,
   FXA_PWDMGR_SECURE_FIELDS,
   FX_OAUTH_CLIENT_ID,
+  FX_OAUTH_WEBCHANNEL_REDIRECT,
   KEY_LIFETIME,
   ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
   ONLOGIN_NOTIFICATION,
@@ -127,8 +128,14 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "USE_RUST",
-  "identity.fxaccounts.useExperimentalRustClient",
+  "ROOT_URL",
+  "identity.fxaccounts.remote.root"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "RUST_BACKEND",
+  "identity.fxaccounts.useRustBackend",
   null,
   null,
   val => (AppConstants.NIGHTLY_BUILD ? val : false) // On non-nightly builds the pref shouldn't even work.
@@ -390,6 +397,7 @@ function copyObjectProperties(from, to, thisObj, keys) {
 class FxAccounts {
   constructor(mocks = null) {
     this._internal = new FxAccountsInternal();
+
     if (mocks) {
       // it's slightly unfortunate that we need to mock the main "internal" object
       // before calling initialize, primarily so a mock `newAccountState` is in
@@ -449,7 +457,7 @@ class FxAccounts {
    * @returns {RustFxAccount}
    */
   get _rustFxa() {
-    if (USE_RUST) {
+    if (RUST_BACKEND) {
       return this._internal.rustFxa;
     }
     return false;
@@ -909,7 +917,7 @@ FxAccountsInternal.prototype = {
   // All significant initialization should be done in this initialize() method
   // to help with our mocking story.
   initialize() {
-    if (USE_RUST) {
+    if (RUST_BACKEND) {
       let logins = Services.logins.findLogins(
         "chrome://fxarust",
         null,
@@ -920,10 +928,9 @@ FxAccountsInternal.prototype = {
         this.rustFxa = new RustFxAccount(stateJSON.password);
       } else {
         this.rustFxa = new RustFxAccount({
-          fxaServer: "https://accounts.firefox.com",
-          clientId: "3c49430b43dfba77",
-          redirectUri:
-            "https://accounts.firefox.com/oauth/success/3c49430b43dfba77",
+          fxaServer: ROOT_URL,
+          clientId: FX_OAUTH_CLIENT_ID,
+          redirectUri: FX_OAUTH_WEBCHANNEL_REDIRECT
         });
       }
     }

@@ -1418,8 +1418,8 @@ pref("browser.uiCustomization.state", "");
 // A restart is mandatory after flipping that preference.
 pref("identity.fxaccounts.enabled", true);
 
-// Use of the experimental Rust backend.
-pref("identity.fxaccounts.useExperimentalRustClient", true /* TODO FALSE! */);
+// Use of the Rust backend vs JS backend
+pref("identity.fxaccounts.useRustBackend", true /* SET TO FALSE */);
 
 // The remote FxA root content URL. Must use HTTPS.
 pref("identity.fxaccounts.remote.root", "https://accounts.firefox.com/");
