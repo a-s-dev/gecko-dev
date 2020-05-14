@@ -1031,7 +1031,7 @@ add_test(function test_fetchAndUnwrapKeys_no_token() {
   fxa
     .setSignedInUser(user)
     .then(user2 => {
-      return fxa.keys.fetchAndUnwrapKeys();
+      return fxa.keys._fetchAndUnwrapKeys();
     })
     .catch(error => {
       log.info("setSignedInUser correctly rejected");
