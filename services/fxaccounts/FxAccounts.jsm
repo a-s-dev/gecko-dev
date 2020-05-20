@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 const { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
 );
@@ -105,6 +108,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/FxAccountsTelemetry.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "RustFxAccount",
+  "resource://gre/modules/RustFxAccount.js"
+);
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   Preferences: "resource://gre/modules/Preferences.jsm",
 });
@@ -114,6 +123,15 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "FXA_ENABLED",
   "identity.fxaccounts.enabled",
   true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "USE_RUST",
+  "identity.fxaccounts.useExperimentalRustClient",
+  null,
+  null,
+  val => (AppConstants.NIGHTLY_BUILD ? val : false) // On non-nightly builds the pref shouldn't even work.
 );
 
 // An AccountState object holds all state related to one specific account.
@@ -426,6 +444,17 @@ class FxAccounts {
     return this._internal.telemetry;
   }
 
+  // Help VSCode help us with some nice autocompletions :)
+  /**
+   * @returns {RustFxAccount}
+   */
+  get _rustFxa() {
+    if (USE_RUST) {
+      return this._internal.rustFxa;
+    }
+    return false;
+  }
+
   _withCurrentAccountState(func) {
     return this._internal.withCurrentAccountState(func);
   }
@@ -454,21 +483,25 @@ class FxAccounts {
     // We expose last accessed times in 'days ago'
     const ONE_DAY = 24 * 60 * 60 * 1000;
 
-    return this._withSessionToken(async sessionToken => {
-      const attachedClients = await this._internal.fxAccountsClient.attachedClients(
-        sessionToken
-      );
-      // We should use the server timestamp here - bug 1595635
-      let now = Date.now();
-      return attachedClients.map(client => {
-        const daysAgo = client.lastAccessTime
-          ? Math.max(Math.floor((now - client.lastAccessTime) / ONE_DAY), 0)
-          : null;
-        return {
-          id: client.clientId,
-          lastAccessedDaysAgo: daysAgo,
-        };
+    let attachedClients;
+
+    if (this._rustFxa) {
+      attachedClients = await this._rustFxa.getAttachedClients();
+    } else {
+      attachedClients = await this._withSessionToken(async sessionToken => {
+        return this._internal.fxAccountsClient.attachedClients(sessionToken);
       });
+    }
+    // We should use the server timestamp here - bug 1595635
+    let now = Date.now();
+    return attachedClients.map(client => {
+      const daysAgo = client.lastAccessTime
+        ? Math.max(Math.floor((now - client.lastAccessTime) / ONE_DAY), 0)
+        : null;
+      return {
+        id: client.clientId,
+        lastAccessedDaysAgo: daysAgo,
+      };
     });
   }
 
@@ -486,8 +519,10 @@ class FxAccounts {
    * @returns {Promise<Object>} Object containing "code" and "state" properties.
    */
   authorizeOAuthCode(options) {
-    return this._withVerifiedAccountState(async state => {
-      const { sessionToken } = await state.getUserAccountData(["sessionToken"]);
+    // TODO: here we'd just grab the session token from fxa because we can't do all rust:
+    // https://github.com/mozilla/application-services/issues/3122
+
+    const oauthAuthorize = async sessionToken => {
       const params = { ...options };
       if (params.keys_jwk) {
         const jwk = JSON.parse(
@@ -510,6 +545,16 @@ class FxAccounts {
       } catch (err) {
         throw this._internal._errorToErrorClass(err);
       }
+    };
+
+    if (this._rustFxa) {
+      const sessionToken = this._rustFxa.getSessionToken();
+      return oauthAuthorize(sessionToken);
+    }
+
+    return this._withVerifiedAccountState(async state => {
+      const { sessionToken } = await state.getUserAccountData(["sessionToken"]);
+      return oauthAuthorize(sessionToken);
     });
   }
 
@@ -536,6 +581,15 @@ class FxAccounts {
    *          UNKNOWN_ERROR
    */
   async getOAuthToken(options = {}) {
+    if (this._rustFxa) {
+      if (Array.isArray(options.scope)) {
+        throw new Error(
+          "The Rust backend does not support requesting multiple scopes at once."
+        );
+      }
+      const accessToken = await this._rustFxa.getAccessToken(options.scope);
+      return accessToken.token;
+    }
     try {
       return await this._internal.getOAuthToken(options);
     } catch (err) {
@@ -598,6 +652,10 @@ class FxAccounts {
    *         an unknown token is passed.
    */
   removeCachedOAuthToken(options) {
+    if (this._rustFxa) {
+      // Well we don't have a method clears tokens for 1 scope, so...
+      return this._rustFxa.clearAccessTokenCache();
+    }
     return this._internal.removeCachedOAuthToken(options);
   }
 
@@ -622,6 +680,37 @@ class FxAccounts {
    *        in pathological cases (eg, file-system errors, etc)
    */
   getSignedInUser() {
+    if (this._rustFxa) {
+      return (async () => {
+        let sessionToken;
+        try {
+          sessionToken = await this._rustFxa.getSessionToken();
+        } catch {
+          // TODO: Throwing if sessionToken is None is a bit... savage,
+          // but maybe in M5 we won't need to answer "do we have a session token".
+        }
+
+        if (!sessionToken) {
+          // This likely means we're logged-out.
+          return null;
+        }
+        const {
+          email,
+          uid,
+          avatarDefault,
+          avatar,
+          displayName,
+        } = await this._rustFxa.getProfile();
+        return {
+          email,
+          uid,
+          verified: true /* there's no such thing as "unverified state" in the OAuth world */,
+          displayName,
+          avatar,
+          avatarDefault,
+        };
+      })();
+    }
     // Note we don't return the session token, but use it to see if we
     // should fetch the profile.
     const ACCT_DATA_FIELDS = ["email", "uid", "verified", "sessionToken"];
@@ -685,6 +774,10 @@ class FxAccounts {
    * you saw an auth related exception from a remote service.)
    */
   checkAccountStatus() {
+    if (this._rustFxa) {
+      // Noop, coz that function is a bit complex, sorry.
+      return Promise.resolve(true);
+    }
     // Note that we don't use _withCurrentAccountState here because that will
     // cause an exception to be thrown if we end up signing out due to the
     // account not existing, which isn't what we want here.
@@ -706,7 +799,14 @@ class FxAccounts {
    *        considered the canonical, albiet expensive, way to determine the
    *        status of the account.
    */
-  hasLocalSession() {
+  async hasLocalSession() {
+    if (this._rustFxa) {
+      try {
+        return !!(await this._rustFxa.getSessionToken());
+      } catch {
+        return false;
+      }
+    }
     return this._withCurrentAccountState(async state => {
       let data = await state.getUserAccountData(["sessionToken"]);
       return !!(data && data.sessionToken);
@@ -731,6 +831,9 @@ class FxAccounts {
   // "an object"), but to be useful across devices, the payload really needs
   // formalizing. We should try and do something better here.
   notifyDevices(deviceIds, excludedIds, payload, TTL) {
+    if (this._rustFxa) {
+      return Promise.resolve(true); // noop, will get removed anyway.
+    }
     return this._internal.notifyDevices(deviceIds, excludedIds, payload, TTL);
   }
 
@@ -739,6 +842,9 @@ class FxAccounts {
    *
    */
   resendVerificationEmail() {
+    if (this._rustFxa) {
+      return Promise.resolve(true);
+    }
     return this._withSessionToken((token, currentState) => {
       this._internal.startPollEmailStatus(currentState, token, "start");
       return this._internal.fxAccountsClient.resendVerificationEmail(token);
@@ -746,6 +852,9 @@ class FxAccounts {
   }
 
   async signOut(localOnly) {
+    if (this._rustFxa) {
+      return this._rustFxa.disconnect();
+    }
     // Note that we do not use _withCurrentAccountState here, otherwise we
     // end up with an exception due to the user signing out before the call is
     // complete - but that's the entire point of this method :)
@@ -756,6 +865,10 @@ class FxAccounts {
   // so that sync can change it when it notices the device name being changed,
   // and that could probably be replaced with a pref observer.
   updateDeviceRegistration() {
+    if (this._rustFxa) {
+      // Short-circuit the thing.
+      return this.device.updateDeviceRegistration();
+    }
     return this._withCurrentAccountState(_ => {
       return this._internal.updateDeviceRegistration();
     });
@@ -763,6 +876,9 @@ class FxAccounts {
 
   // we should try and kill this too.
   whenVerified(data) {
+    if (this._rustFxa) {
+      return Promise.resolve(true);
+    }
     return this._withCurrentAccountState(_ => {
       return this._internal.whenVerified(data);
     });
@@ -793,6 +909,25 @@ FxAccountsInternal.prototype = {
   // All significant initialization should be done in this initialize() method
   // to help with our mocking story.
   initialize() {
+    if (USE_RUST) {
+      let logins = Services.logins.findLogins(
+        "chrome://fxarust",
+        null,
+        "FxA Rust state"
+      );
+      if (logins.length == 1) {
+        let stateJSON = logins[0];
+        this.rustFxa = new RustFxAccount(stateJSON.password);
+      } else {
+        this.rustFxa = new RustFxAccount({
+          fxaServer: "https://accounts.firefox.com",
+          clientId: "3c49430b43dfba77",
+          redirectUri:
+            "https://accounts.firefox.com/oauth/success/3c49430b43dfba77",
+        });
+      }
+    }
+
     XPCOMUtils.defineLazyGetter(this, "fxaPushService", function() {
       return Cc["@mozilla.org/fxaccounts/push;1"].getService(
         Ci.nsISupports

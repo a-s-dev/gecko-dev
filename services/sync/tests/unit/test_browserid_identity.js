@@ -812,7 +812,7 @@ add_task(async function test_getKeysMissing() {
     },
     // And the keys object with a mock that returns no keys.
     keys: {
-      fetchAndUnwrapKeys() {
+      _fetchAndUnwrapKeys() {
         return Promise.resolve({});
       },
     },
@@ -855,7 +855,7 @@ add_task(async function test_signedInUserMissing() {
   configureFxAccountIdentity(browseridManager, globalIdentityConfig);
 
   let fxa = new FxAccounts({
-    fetchAndUnwrapKeys() {
+    _fetchAndUnwrapKeys() {
       return Promise.resolve({});
     },
     fxAccountsClient: new MockFxAccountsClient(),

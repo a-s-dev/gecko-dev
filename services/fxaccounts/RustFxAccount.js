@@ -4,6 +4,8 @@
 
 const EXPORTED_SYMBOLS = ["RustFxAccount"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 /**
  * This class is a low-level JS wrapper around the `mozIFirefoxAccountsBridge`
  * interface.
@@ -64,7 +66,7 @@ class RustFxAccount {
    * @returns {Promise<string>} The JSON representation of the state.
    */
   async stateJSON() {
-    return promisify(this.bridge.stateJSON);
+    return this._promisify(this.bridge.stateJSON);
   }
   /**
    * Request a OAuth token by starting a new OAuth flow.
@@ -77,7 +79,7 @@ class RustFxAccount {
    * @returns {Promise<string>}  a URL string that the caller should navigate to.
    */
   async beginOAuthFlow(scopes) {
-    return promisify(this.bridge.beginOAuthFlow, scopes);
+    return this._promisify(this.bridge.beginOAuthFlow, scopes);
   }
   /**
    * Complete an OAuth flow initiated by `beginOAuthFlow(...)`.
@@ -87,7 +89,7 @@ class RustFxAccount {
    * @throws if there was an error during the login flow.
    */
   async completeOAuthFlow(code, state) {
-    return promisify(this.bridge.completeOAuthFlow, code, state);
+    return this._promisify(this.bridge.completeOAuthFlow, code, state);
   }
   /**
    * Try to get an OAuth access token.
@@ -112,7 +114,9 @@ class RustFxAccount {
    * the desired scope.
    */
   async getAccessToken(scope, ttl) {
-    return JSON.parse(await promisify(this.bridge.getAccessToken, scope, ttl));
+    return JSON.parse(
+      await this._promisify(this.bridge.getAccessToken, scope, ttl)
+    );
   }
   /**
    * Get the session token if held.
@@ -121,7 +125,7 @@ class RustFxAccount {
    * @throws if a session token is not being held.
    */
   async getSessionToken() {
-    return promisify(this.bridge.getSessionToken);
+    return this._promisify(this.bridge.getSessionToken);
   }
   /**
    * Returns the list of OAuth attached clients.
@@ -144,7 +148,7 @@ class RustFxAccount {
    * @throws if a session token is not being held.
    */
   async getAttachedClients() {
-    return JSON.parse(await promisify(this.bridge.getAttachedClients));
+    return JSON.parse(await this._promisify(this.bridge.getAttachedClients));
   }
   /**
    * Check whether the currently held refresh token is active.
@@ -155,7 +159,9 @@ class RustFxAccount {
    * @returns {Promise<IntrospectInfo>}
    */
   async checkAuthorizationStatus() {
-    return JSON.parse(await promisify(this.bridge.checkAuthorizationStatus));
+    return JSON.parse(
+      await this._promisify(this.bridge.checkAuthorizationStatus)
+    );
   }
   /*
    * This method should be called when a request made with
@@ -165,14 +171,14 @@ class RustFxAccount {
    * again.
    */
   async clearAccessTokenCache() {
-    return promisify(this.bridge.clearAccessTokenCache);
+    return this._promisify(this.bridge.clearAccessTokenCache);
   }
   /*
    * Disconnect from the account and optionaly destroy our device record.
    * `beginOAuthFlow(...)` will need to be called to reconnect.
    */
   async disconnect() {
-    return promisify(this.bridge.disconnect);
+    return this._promisify(this.bridge.disconnect);
   }
   /**
    * Gets the logged-in user profile.
@@ -191,7 +197,9 @@ class RustFxAccount {
    * at least the `profile` scope.
    */
   async getProfile(ignoreCache) {
-    return JSON.parse(await promisify(this.bridge.getProfile, ignoreCache));
+    return JSON.parse(
+      await this._promisify(this.bridge.getProfile, ignoreCache)
+    );
   }
   /**
    * Start a migration process from a session-token-based authenticated account.
@@ -212,7 +220,7 @@ class RustFxAccount {
     copySessionToken = false
   ) {
     return JSON.parse(
-      await promisify(
+      await this._promisify(
         this.bridge.migrateFromSessionToken,
         sessionToken,
         kSync,
@@ -228,7 +236,7 @@ class RustFxAccount {
    */
   async retryMigrateFromSessionToken() {
     return JSON.parse(
-      await promisify(this.bridge.retryMigrateFromSessionToken)
+      await this._promisify(this.bridge.retryMigrateFromSessionToken)
     );
   }
   /**
@@ -238,7 +246,7 @@ class RustFxAccount {
    * @returns {Promise<boolean>} true if a migration flow can be resumed.
    */
   async isInMigrationState() {
-    return promisify(this.bridge.isInMigrationState);
+    return this._promisify(this.bridge.isInMigrationState);
   }
   /**
    * Called after a password change was done through webchannel.
@@ -246,7 +254,7 @@ class RustFxAccount {
    * @param {string} sessionToken
    */
   async handleSessionTokenChange(sessionToken) {
-    return promisify(this.bridge.handleSessionTokenChange, sessionToken);
+    return this._promisify(this.bridge.handleSessionTokenChange, sessionToken);
   }
   /**
    * Get the token server URL with `1.0/sync/1.5` appended at the end.
@@ -254,28 +262,28 @@ class RustFxAccount {
    * @returns {Promise<string>}
    */
   async getTokenServerEndpointURL() {
-    let url = await promisify(this.bridge.getTokenServerEndpointURL);
+    let url = await this._promisify(this.bridge.getTokenServerEndpointURL);
     return `${url}${url.endsWith("/") ? "" : "/"}1.0/sync/1.5`;
   }
   /**
    * @returns {Promise<string>}
    */
   async getConnectionSuccessURL() {
-    return promisify(this.bridge.getConnectionSuccessURL);
+    return this._promisify(this.bridge.getConnectionSuccessURL);
   }
   /**
    * @param {string} entrypoint
    * @returns {Promise<string>}
    */
   async getManageAccountURL(entrypoint) {
-    return promisify(this.bridge.getManageAccountURL, entrypoint);
+    return this._promisify(this.bridge.getManageAccountURL, entrypoint);
   }
   /**
    * @param {string} entrypoint
    * @returns {Promise<string>}
    */
   async getManageDevicesURL(entrypoint) {
-    return promisify(this.bridge.getManageDevicesURL, entrypoint);
+    return this._promisify(this.bridge.getManageDevicesURL, entrypoint);
   }
   /**
    * Fetch the devices in the account.
@@ -302,7 +310,9 @@ class RustFxAccount {
    * @returns {Promise<[Device]>}
    */
   async fetchDevices(ignoreCache) {
-    return JSON.parse(await promisify(this.bridge.fetchDevices, ignoreCache));
+    return JSON.parse(
+      await this._promisify(this.bridge.fetchDevices, ignoreCache)
+    );
   }
   /**
    * Rename the local device
@@ -310,7 +320,7 @@ class RustFxAccount {
    * @param {string} name
    */
   async setDeviceDisplayName(name) {
-    return promisify(this.bridge.setDeviceDisplayName, name);
+    return this._promisify(this.bridge.setDeviceDisplayName, name);
   }
   /**
    * Handle an incoming Push message payload.
@@ -326,7 +336,9 @@ class RustFxAccount {
    * @return {Promise<[TabReceivedCommand|DeviceConnectedEvent|DeviceDisconnectedEvent]>}
    */
   async handlePushMessage(payload) {
-    return JSON.parse(await promisify(this.bridge.handlePushMessage, payload));
+    return JSON.parse(
+      await this._promisify(this.bridge.handlePushMessage, payload)
+    );
   }
   /**
    * Fetch for device commands we didn't receive through Push.
@@ -342,7 +354,7 @@ class RustFxAccount {
    * @returns {Promise<[TabReceivedCommand]>}
    */
   async pollDeviceCommands() {
-    return JSON.parse(await promisify(this.bridge.pollDeviceCommands));
+    return JSON.parse(await this._promisify(this.bridge.pollDeviceCommands));
   }
   /**
    * Send a tab to a device identified by its ID.
@@ -352,7 +364,7 @@ class RustFxAccount {
    * @param {string} url
    */
   async sendSingleTab(targetId, title, url) {
-    return promisify(this.bridge.sendSingleTab, targetId, title, url);
+    return this._promisify(this.bridge.sendSingleTab, targetId, title, url);
   }
   /**
    * Update our FxA push subscription.
@@ -362,7 +374,7 @@ class RustFxAccount {
    * @param {string} authKey
    */
   async setDevicePushSubscription(endpoint, publicKey, authKey) {
-    return promisify(
+    return this._promisify(
       this.bridge.setDevicePushSubscription,
       endpoint,
       publicKey,
@@ -377,7 +389,7 @@ class RustFxAccount {
    * @param {[DeviceCapability]} supportedCapabilities
    */
   async initializeDevice(name, deviceType, supportedCapabilities) {
-    return promisify(
+    return this._promisify(
       this.bridge.initializeDevice,
       name,
       deviceType,
@@ -390,23 +402,66 @@ class RustFxAccount {
    * @param {[DeviceCapability]} supportedCapabilities
    */
   async ensureCapabilities(supportedCapabilities) {
-    return promisify(this.bridge.ensureCapabilities, supportedCapabilities);
+    return this._promisify(
+      this.bridge.ensureCapabilities,
+      supportedCapabilities
+    );
   }
-}
 
-function promisify(func, ...params) {
-  return new Promise((resolve, reject) => {
-    func(...params, {
-      // This object implicitly implements
-      // `mozIFirefoxAccountsBridgeCallback`.
-      handleSuccess: resolve,
-      handleError(code, message) {
-        let error = new Error(message);
-        error.result = code;
-        reject(error);
-      },
+  _promisify(func, ...params) {
+    const fxa = this;
+    return new Promise((resolve, reject) => {
+      func(...params, {
+        // This object implicitly implements
+        // `mozIFirefoxAccountsBridgeCallback`.
+        handleSuccess(res) {
+          // Get and write the FxA state.
+          // Very much prototype quality code.
+          // There's a high chance the JS event loop will mess up everything,
+          // such as doing OP1 "write-state" AFTER OP2 "write-state".
+          fxa.bridge.stateJSON({
+            // Who doesn't like recursion?
+            handleSuccess(state) {
+              let loginInfo = new Components.Constructor(
+                "@mozilla.org/login-manager/loginInfo;1",
+                Ci.nsILoginInfo,
+                "init"
+              );
+              let login = new loginInfo(
+                "chrome://fxarust",
+                null, // aFormActionOrigin,
+                "FxA Rust state", // aHttpRealm,
+                "fxarust", // aUsername
+                state, // aPassword
+                "", // aUsernameField
+                ""
+              ); // aPasswordField
+
+              let existingLogins = Services.logins.findLogins(
+                "chrome://fxarust",
+                null,
+                "FxA Rust state"
+              );
+              if (existingLogins.length) {
+                Services.logins.modifyLogin(existingLogins[0], login);
+              } else {
+                Services.logins.addLogin(login);
+              }
+            },
+            handleError(code, message) {
+              // Something went wrong.
+            },
+          });
+          resolve(res);
+        },
+        handleError(code, message) {
+          let error = new Error(message);
+          error.result = code;
+          reject(error);
+        },
+      });
     });
-  });
+  }
 }
 
 /**

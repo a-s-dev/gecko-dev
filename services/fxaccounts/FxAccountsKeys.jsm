@@ -27,8 +27,16 @@ class FxAccountsKeys {
    * Checks if we currently have encryption keys or if we have enough to
    * be able to successfully fetch them for the signed-in-user.
    */
-  canGetKeys() {
-    return this._fxia.withCurrentAccountState(async currentState => {
+  async canGetKeys() {
+    if (this._fxia.rustFxa) {
+      try {
+        const token = await this._fxia.rustFxa.getAccessToken(SCOPE_OLD_SYNC);
+        return !!token.key;
+      } catch (e) {
+        return false;
+      }
+    }
+    return this._fxia.withCurrentAccountState(async (currentState) => {
       let userData = await currentState.getUserAccountData();
       if (!userData) {
         throw new Error("Can't possibly get keys; User is not signed in");
@@ -43,7 +51,7 @@ class FxAccountsKeys {
       return (
         userData &&
         (userData.keyFetchToken ||
-          DERIVED_KEYS_NAMES.every(k => userData[k]) ||
+          DERIVED_KEYS_NAMES.every((k) => userData[k]) ||
           userData.kB)
       );
     });
@@ -71,7 +79,31 @@ class FxAccountsKeys {
    *        or null if no user is signed in
    */
   async getKeys() {
-    return this._fxia.withCurrentAccountState(async currentState => {
+    if (this._fxia.rustFxa) {
+      let {
+        key: { kid, k: kSync },
+      } = await this._fxia.rustFxa.getAccessToken(SCOPE_OLD_SYNC);
+      let kXCS = kid.split("-")[1];
+
+      // Base64 -> hex.
+      kSync = CommonUtils.bufferToHex(
+        new Uint8Array(
+          ChromeUtils.base64URLDecode(kSync, { padding: "ignore" })
+        )
+      );
+      kXCS = CommonUtils.bufferToHex(
+        new Uint8Array(ChromeUtils.base64URLDecode(kXCS, { padding: "ignore" }))
+      );
+
+      // In practice the users of getKeys() only use the `k...` keys.
+      return {
+        kSync,
+        kXCS,
+        kExtSync: null, // huuuuh
+        kExtKbHash: null, // yeah huuh.
+      };
+    }
+    return this._fxia.withCurrentAccountState(async (currentState) => {
       try {
         let userData = await currentState.getUserAccountData();
         if (!userData) {
@@ -89,17 +121,17 @@ class FxAccountsKeys {
           });
           userData = await currentState.getUserAccountData();
         }
-        if (DERIVED_KEYS_NAMES.every(k => !!userData[k])) {
+        if (DERIVED_KEYS_NAMES.every((k) => !!userData[k])) {
           return userData;
         }
         if (!currentState.whenKeysReadyDeferred) {
           currentState.whenKeysReadyDeferred = PromiseUtils.defer();
           if (userData.keyFetchToken) {
-            this.fetchAndUnwrapKeys(userData.keyFetchToken).then(
-              dataWithKeys => {
-                if (DERIVED_KEYS_NAMES.some(k => !dataWithKeys[k])) {
+            this._fetchAndUnwrapKeys(userData.keyFetchToken).then(
+              (dataWithKeys) => {
+                if (DERIVED_KEYS_NAMES.some((k) => !dataWithKeys[k])) {
                   const missing = DERIVED_KEYS_NAMES.filter(
-                    k => !dataWithKeys[k]
+                    (k) => !dataWithKeys[k]
                   );
                   currentState.whenKeysReadyDeferred.reject(
                     new Error(`user data missing: ${missing.join(", ")}`)
@@ -108,7 +140,7 @@ class FxAccountsKeys {
                 }
                 currentState.whenKeysReadyDeferred.resolve(dataWithKeys);
               },
-              err => {
+              (err) => {
                 currentState.whenKeysReadyDeferred.reject(err);
               }
             );
@@ -126,7 +158,7 @@ class FxAccountsKeys {
   /**
    * Once the user's email is verified, we can request the keys
    */
-  fetchKeys(keyFetchToken) {
+  _fetchKeys(keyFetchToken) {
     let client = this._fxia.fxAccountsClient;
     log.debug(
       `Fetching keys with token ${!!keyFetchToken} from ${client.host}`
@@ -137,8 +169,8 @@ class FxAccountsKeys {
     return client.accountKeys(keyFetchToken);
   }
 
-  fetchAndUnwrapKeys(keyFetchToken) {
-    return this._fxia.withCurrentAccountState(async currentState => {
+  _fetchAndUnwrapKeys(keyFetchToken) {
+    return this._fxia.withCurrentAccountState(async (currentState) => {
       if (logPII) {
         log.debug("fetchAndUnwrapKeys: token: " + keyFetchToken);
       }
@@ -150,7 +182,7 @@ class FxAccountsKeys {
         return null;
       }
 
-      let { wrapKB } = await this.fetchKeys(keyFetchToken);
+      let { wrapKB } = await this._fetchKeys(keyFetchToken);
 
       let data = await currentState.getUserAccountData();
 
@@ -176,12 +208,12 @@ class FxAccountsKeys {
 
       log.debug(
         "Keys Obtained:" +
-          DERIVED_KEYS_NAMES.map(k => `${k}=${!!updateData[k]}`).join(", ")
+          DERIVED_KEYS_NAMES.map((k) => `${k}=${!!updateData[k]}`).join(", ")
       );
       if (logPII) {
         log.debug(
           "Keys Obtained:" +
-            DERIVED_KEYS_NAMES.map(k => `${k}=${updateData[k]}`).join(", ")
+            DERIVED_KEYS_NAMES.map((k) => `${k}=${updateData[k]}`).join(", ")
         );
       }
 
@@ -192,9 +224,34 @@ class FxAccountsKeys {
   }
 
   /**
+   * @param {String} scopes Space separated requested scopes
+   * @param {String} clientId oauth client id
+   */
+  async getScopedKeys(scopes, clientId) {
+    const scopedKeys = {};
+    if (this._fxia.rustFxa) {
+      for (const scope of scopes.split(" ")) {
+        const { key } = await this._fxia.rustFxa.getAccessToken(scope);
+        scopedKeys[scope] = key;
+      }
+      return scopedKeys;
+    }
+    const { sessionToken } = await this._fxia._getVerifiedAccountOrReject();
+    const keyData = await this._fxia.fxAccountsClient.getScopedKeyData(
+      sessionToken,
+      clientId,
+      scopes
+    );
+    for (const [scope, data] of Object.entries(keyData)) {
+      scopedKeys[scope] = await this._getKeyForScope(scope, data);
+    }
+    return scopedKeys;
+  }
+
+  /**
    * @param {String} scope Single key bearing scope
    */
-  async getKeyForScope(scope, { keyRotationTimestamp }) {
+  async _getKeyForScope(scope, { keyRotationTimestamp }) {
     if (scope !== SCOPE_OLD_SYNC) {
       throw new Error(`Unavailable key material for ${scope}`);
     }
@@ -215,24 +272,6 @@ class FxAccountsKeys {
       k: kSync,
       kty: "oct",
     };
-  }
-
-  /**
-   * @param {String} scopes Space separated requested scopes
-   * @param {String} clientId oauth client id
-   */
-  async getScopedKeys(scopes, clientId) {
-    const { sessionToken } = await this._fxia._getVerifiedAccountOrReject();
-    const keyData = await this._fxia.fxAccountsClient.getScopedKeyData(
-      sessionToken,
-      clientId,
-      scopes
-    );
-    const scopedKeys = {};
-    for (const [scope, data] of Object.entries(keyData)) {
-      scopedKeys[scope] = await this.getKeyForScope(scope, data);
-    }
-    return scopedKeys;
   }
 
   async _deriveKeys(uid, kBbytes) {

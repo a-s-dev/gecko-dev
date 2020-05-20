@@ -65,7 +65,14 @@ XPCOMUtils.defineLazyPreferenceGetter(
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "USE_OAUTH_FOR_SYNC_TOKEN",
-  "identity.sync.useOAuthForSyncToken"
+  "identity.sync.useOAuthForSyncToken",
+  null,
+  null,
+  // No matter what, activating the Rust backend should activate the OAuth fetching for keys.
+  val =>
+    Services.prefs.getBoolPref("identity.fxaccounts.useExperimentalRustClient")
+      ? true
+      : val
 );
 
 // FxAccountsCommon.js doesn't use a "namespace", so create one here.
