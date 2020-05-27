@@ -75,7 +75,7 @@ var FxAccountsConfig = {
   },
 
   async promiseConnectAccountOAuthURI() {
-    return fxAccounts._rustFxAccount.beginOAuthFlow([SCOPE_PROFILE, SCOPE_OLD_SYNC, SCOPE_SESSION_TOKEN]);
+    return fxAccounts._internal.rustFxa.beginOAuthFlow([SCOPE_PROFILE, SCOPE_OLD_SYNC, SCOPE_SESSION_TOKEN]);
   },
 
   async promiseForceSigninURI(entrypoint, extraParams = {}) {

@@ -134,7 +134,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "USE_RUST",
+  "RUST_BACKEND",
   "identity.fxaccounts.useRustBackend",
   null,
   null,
@@ -397,15 +397,6 @@ function copyObjectProperties(from, to, thisObj, keys) {
 class FxAccounts {
   constructor(mocks = null) {
     this._internal = new FxAccountsInternal();
-    if (RUST_BACKEND) {
-      // FxAccounts functionality with the Rust backend.
-      this._rustFxAccount = new RustFxAccount({
-        fxaServer: ROOT_URL,
-        clientId: FX_OAUTH_CLIENT_ID,
-        redirectUri: FX_OAUTH_WEBCHANNEL_REDIRECT
-      });
-    }
-
     if (mocks) {
       // it's slightly unfortunate that we need to mock the main "internal" object
       // before calling initialize, primarily so a mock `newAccountState` is in
@@ -465,7 +456,7 @@ class FxAccounts {
    * @returns {RustFxAccount}
    */
   get _rustFxa() {
-    if (USE_RUST) {
+    if (RUST_BACKEND) {
       return this._internal.rustFxa;
     }
     return false;
@@ -925,7 +916,7 @@ FxAccountsInternal.prototype = {
   // All significant initialization should be done in this initialize() method
   // to help with our mocking story.
   initialize() {
-    if (USE_RUST) {
+    if (RUST_BACKEND) {
       let logins = Services.logins.findLogins(
         "chrome://fxarust",
         null,
