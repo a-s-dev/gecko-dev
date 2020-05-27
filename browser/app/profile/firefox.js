@@ -1419,7 +1419,7 @@ pref("browser.uiCustomization.state", "");
 pref("identity.fxaccounts.enabled", true);
 
 // Use of the Rust backend vs JS backend
-pref("identity.fxaccounts.useRustBackend", false);
+pref("identity.fxaccounts.useRustBackend", true /* TODO: make false later */);
 
 // The remote FxA root content URL. Must use HTTPS.
 pref("identity.fxaccounts.remote.root", "https://accounts.firefox.com/");

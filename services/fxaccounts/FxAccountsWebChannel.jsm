@@ -246,7 +246,7 @@ FxAccountsWebChannel.prototype = {
           .catch(error => this._sendError(error, message, sendingContext));
         break;
       case COMMAND_OAUTH_LOGIN:
-        const rustFxAccount = fxAccounts._rustFxAccount;
+        const rustFxAccount = fxAccounts._internal.rustFxa;
         rustFxAccount
           .completeOAuthFlow(data.code, data.state)
           .then(async () => {
