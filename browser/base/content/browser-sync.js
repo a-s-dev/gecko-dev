@@ -23,6 +23,12 @@ ChromeUtils.defineModuleGetter(
   "resource://services-sync/main.js"
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "RUST_BACKEND",
+  "identity.fxaccounts.useRustBackend"
+);
+
 const MIN_STATUS_ANIMATION_DURATION = 1600;
 
 var gSync = {
@@ -735,7 +741,12 @@ var gSync = {
   },
 
   async openFxAEmailFirstPage(entryPoint) {
-    const url = await FxAccounts.config.promiseConnectAccountURI(entryPoint);
+    let url;
+    if (RUST_BACKEND) {
+      url = await FxAccounts.config.promiseConnectAccountOAuthURI();
+    } else {
+      url = await FxAccounts.config.promiseConnectAccountURI(entryPoint);
+    }
     switchToTabHavingURI(url, true, { replaceQueryString: true });
   },
 

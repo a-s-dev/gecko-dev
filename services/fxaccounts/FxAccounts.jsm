@@ -40,6 +40,7 @@ const {
   FXA_PWDMGR_REAUTH_WHITELIST,
   FXA_PWDMGR_SECURE_FIELDS,
   FX_OAUTH_CLIENT_ID,
+  FX_OAUTH_WEBCHANNEL_REDIRECT,
   KEY_LIFETIME,
   ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
   ONLOGIN_NOTIFICATION,
@@ -127,8 +128,14 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
+  "ROOT_URL",
+  "identity.fxaccounts.remote.root"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
   "USE_RUST",
-  "identity.fxaccounts.useExperimentalRustClient",
+  "identity.fxaccounts.useRustBackend",
   null,
   null,
   val => (AppConstants.NIGHTLY_BUILD ? val : false) // On non-nightly builds the pref shouldn't even work.
@@ -390,6 +397,15 @@ function copyObjectProperties(from, to, thisObj, keys) {
 class FxAccounts {
   constructor(mocks = null) {
     this._internal = new FxAccountsInternal();
+    if (RUST_BACKEND) {
+      // FxAccounts functionality with the Rust backend.
+      this._rustFxAccount = new RustFxAccount({
+        fxaServer: ROOT_URL,
+        clientId: FX_OAUTH_CLIENT_ID,
+        redirectUri: FX_OAUTH_WEBCHANNEL_REDIRECT
+      });
+    }
+
     if (mocks) {
       // it's slightly unfortunate that we need to mock the main "internal" object
       // before calling initialize, primarily so a mock `newAccountState` is in

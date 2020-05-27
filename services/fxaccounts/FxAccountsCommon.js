@@ -88,8 +88,11 @@ exports.COMMAND_SENDTAB = exports.COMMAND_PREFIX + exports.COMMAND_SENDTAB_TAIL;
 
 // OAuth
 exports.FX_OAUTH_CLIENT_ID = "5882386c6d801776";
+exports.FX_OAUTH_WEBCHANNEL_REDIRECT =
+  "urn:ietf:wg:oauth:2.0:oob:oauth-redirect-webchannel";
 exports.SCOPE_PROFILE = "profile";
 exports.SCOPE_OLD_SYNC = "https://identity.mozilla.com/apps/oldsync";
+exports.SCOPE_SESSION_TOKEN = "https://identity.mozilla.com/tokens/session";
 
 // OAuth metadata for other Firefox-related services that we might need to know about
 // in order to provide an enhanced user experience.
@@ -112,6 +115,7 @@ exports.COMMAND_PAIR_COMPLETE = "fxaccounts:pair_complete";
 exports.COMMAND_PROFILE_CHANGE = "profile:change";
 exports.COMMAND_CAN_LINK_ACCOUNT = "fxaccounts:can_link_account";
 exports.COMMAND_LOGIN = "fxaccounts:login";
+exports.COMMAND_OAUTH_LOGIN = "fxaccounts:oauth_login";
 exports.COMMAND_LOGOUT = "fxaccounts:logout";
 exports.COMMAND_DELETE = "fxaccounts:delete";
 exports.COMMAND_SYNC_PREFERENCES = "fxaccounts:sync_preferences";
