@@ -58,6 +58,8 @@ service('Bits', 'nsIBits',
 # NB: this should also expose nsIXULAppInfo, as does Services.jsm.
 service('AppInfoService', 'nsIXULRuntime',
         "@mozilla.org/xre/app-info;1")
+service('Logins', 'nsILoginManager',
+        "@mozilla.org/login-manager;1")
 
 if buildconfig.substs.get('ENABLE_REMOTE_AGENT'):
     service('RemoteAgent', 'nsIRemoteAgent',
@@ -96,6 +98,7 @@ CPP_INCLUDES = """
 #include "nsIURIFixup.h"
 #include "nsIBits.h"
 #include "nsIXULRuntime.h"
+#include "nsILoginManager.h"
 """
 
 if buildconfig.substs.get('ENABLE_REMOTE_AGENT'):

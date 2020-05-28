@@ -15,15 +15,17 @@ use fxa_client::{
     FirefoxAccount,
 };
 use moz_task::{DispatchOptions, Task, TaskRunnable, ThreadPtrHandle, ThreadPtrHolder};
-use nserror::nsresult;
-use nsstring::{nsACString, nsCString};
+use nserror::{nsresult, NS_ERROR_NOT_AVAILABLE};
+use nsstring::{nsACString, nsAString, nsCString, nsString};
 use std::{
     fmt::Write,
     mem, str,
     sync::{Arc, Mutex, Weak},
 };
+use thin_vec::thin_vec;
 use xpcom::{
-    interfaces::{mozIFirefoxAccountsBridgeCallback, nsIEventTarget},
+    getter_addrefs,
+    interfaces::{mozIFirefoxAccountsBridgeCallback, nsIEventTarget, nsILoginInfo, nsISupports},
     RefPtr,
 };
 
@@ -458,6 +460,57 @@ impl PuntTask {
                 .map(|_| PuntResult::Null),
         }?)
     }
+
+    fn persist_state(&self) -> Result<(), Error> {
+        let fxa = self.fxa.upgrade().ok_or_else(|| Error::AlreadyTornDown)?;
+        let fxa = fxa.lock()?;
+        let state = fxa.to_json()?;
+        let login_info =
+            xpcom::create_instance::<nsILoginInfo>(cstr!("@mozilla.org/login-manager/loginInfo;1"))
+                .ok_or_else(|| Error::Nsresult(NS_ERROR_NOT_AVAILABLE))?;
+        let origin = nsString::from("chrome://fxarust");
+        let http_realm = nsString::from("FxA Rust state");
+        let username = nsString::from("fxarust");
+        let password = nsString::from(&state);
+        let empty = nsString::from("");
+        unsafe {
+            login_info
+                .Init(
+                    &*origin as *const nsAString,
+                    std::ptr::null(), /* form_action_origin */
+                    &*http_realm as *const nsAString,
+                    &*username as *const nsAString,
+                    &*password as *const nsAString,
+                    &*empty as *const nsAString, /* username_field */
+                    &*empty as *const nsAString, /* password_field */
+                )
+                .to_result()?;
+        }
+
+        let logins_service =
+            xpcom::services::get_Logins().ok_or_else(|| Error::Nsresult(NS_ERROR_NOT_AVAILABLE))?;
+        let mut ret = thin_vec![];
+        unsafe {
+            logins_service
+                .FindLogins(
+                    &*origin as *const nsAString,
+                    std::ptr::null(),
+                    &*http_realm as *const nsAString,
+                    &mut ret,
+                )
+                .to_result()?;
+        }
+        if ret.is_empty() {
+            getter_addrefs(|p| unsafe { logins_service.AddLogin(&*login_info, p) })?;
+        } else {
+            unsafe {
+                logins_service
+                    .ModifyLogin(&*ret[0], &*login_info.coerce::<nsISupports>())
+                    .to_result()?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn to_capabilities(capabilities: &[nsCString]) -> error::Result<Vec<FxaDeviceCapability>> {
@@ -502,7 +555,12 @@ impl Task for PuntTask {
             &mut *self.result.borrow_mut(),
             Err(Error::AlreadyRan(self.name)),
         ) {
-            Ok(result) => unsafe { callback.HandleSuccess(result.into_variant().coerce()) },
+            Ok(result) => {
+                if let Err(_) = self.persist_state() {
+                    // TODO we should log here once we can log to about:sync-log.
+                }
+                unsafe { callback.HandleSuccess(result.into_variant().coerce()) }
+            }
             Err(err) => {
                 let mut message = nsCString::new();
                 write!(message, "{}", err).unwrap();
